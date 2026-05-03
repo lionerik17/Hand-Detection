@@ -31,7 +31,23 @@ def main():
     print("--- Starting Webcam Hand Detection ---")
     print("Press 'Esc' or close the window to quit.")
 
+    last_time = time.perf_counter()
+
+    # Moving average variables
+    avg_ms = 33.3
+    alpha = 0.1
+
     while cap.isOpened():
+        if window.should_close():
+            break
+
+        current_time = time.perf_counter()
+        raw_delta_ms = (current_time - last_time) * SCALE
+        last_time = current_time
+
+        # Update moving average
+        avg_ms = (1 - alpha) * avg_ms + alpha * raw_delta_ms
+
         success, frame = cap.read()
         if not success:
             print("Ignoring empty camera frame.")
@@ -43,7 +59,7 @@ def main():
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
-        # Get the current timestamp in milliseconds
+        # Get the current timestamp
         frame_timestamp_ms = int(time.time() * SCALE)
 
         # Detect landmarks in the frame
@@ -90,15 +106,14 @@ def main():
                     # Line 2: Specialized Metrics
                     metrics_text = f"Metrics: Opp:{decoded['opposition']} Spr:{decoded['spread']} Wri:{decoded['wrist']}"
                     cv2.putText(frame, metrics_text, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+                    cv2.putText(frame, f"AVG: {avg_ms:.1f}ms", (frame.shape[1] - 180, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
         else:
             cv2.putText(frame, "No Hand Detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         
-        # Display the frame using our new window class
+        # Display the frame
         window.show(frame)
-
-        # Check if we should close
-        if window.should_close():
-            break
     
     # Cleanup
     fpga.close()

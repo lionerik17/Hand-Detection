@@ -35,9 +35,6 @@ class HandJoint(IntEnum):
 
 # Official MediaPipe Connections
 HAND_CONNECTIONS = [
-    """
-    List of tuples representing the connections between joints in the hand skeleton.
-    """
     # Thumb
     (HandJoint.WRIST, HandJoint.THUMB_CMC), (HandJoint.THUMB_CMC, HandJoint.THUMB_MCP),
     (HandJoint.THUMB_MCP, HandJoint.THUMB_IP), (HandJoint.THUMB_IP, HandJoint.THUMB_TIP),
