@@ -33,6 +33,27 @@ class HandJoint(IntEnum):
     PINKY_DIP = 19
     PINKY_TIP = 20
 
+    @classmethod
+    def get_finger_bases(cls):
+        """Returns the base (MCP/CMC) joints for all five fingers."""
+        return [cls.THUMB_CMC, cls.INDEX_MCP, cls.MIDDLE_MCP, cls.RING_MCP, cls.PINKY_MCP]
+
+    @classmethod
+    def get_finger_chains(cls):
+        """Returns the full 4-joint chains for each finger."""
+        return [
+            (cls.THUMB_CMC, cls.THUMB_MCP, cls.THUMB_IP, cls.THUMB_TIP),
+            (cls.INDEX_MCP, cls.INDEX_PIP, cls.INDEX_DIP, cls.INDEX_TIP),
+            (cls.MIDDLE_MCP, cls.MIDDLE_PIP, cls.MIDDLE_DIP, cls.MIDDLE_TIP),
+            (cls.RING_MCP, cls.RING_PIP, cls.RING_DIP, cls.RING_TIP),
+            (cls.PINKY_MCP, cls.PINKY_PIP, cls.PINKY_DIP, cls.PINKY_TIP)
+        ]
+
+    @classmethod
+    def get_palm_indices(cls):
+        """Returns the indices forming the palm polygon."""
+        return [cls.WRIST, cls.THUMB_CMC, cls.INDEX_MCP, cls.MIDDLE_MCP, cls.RING_MCP, cls.PINKY_MCP]
+
 # Official MediaPipe Connections
 HAND_CONNECTIONS = [
     # Thumb

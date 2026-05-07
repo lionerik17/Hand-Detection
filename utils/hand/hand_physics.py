@@ -6,7 +6,7 @@ SCALE = 1000  # Conversion from meters to millimeters
 # Finger joint mapping for flexion calculation
 # Format: (Base Joint, Middle Joint/Vertex, Tip-ward Joint)
 FINGER_JOINT_MAP = {
-    0: (HandJoint.THUMB_CMC,  HandJoint.THUMB_MCP,  HandJoint.THUMB_IP),
+    0: (HandJoint.THUMB_MCP,  HandJoint.THUMB_IP,  HandJoint.THUMB_TIP),
     1: (HandJoint.INDEX_MCP,  HandJoint.INDEX_PIP,  HandJoint.INDEX_DIP),
     2: (HandJoint.MIDDLE_MCP, HandJoint.MIDDLE_PIP, HandJoint.MIDDLE_DIP),
     3: (HandJoint.RING_MCP,   HandJoint.RING_PIP,   HandJoint.RING_DIP),

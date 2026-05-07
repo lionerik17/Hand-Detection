@@ -5,7 +5,8 @@ import time
 from utils.hand import hand_landmarks
 from utils.fpga import fpga_packet
 from utils.fpga.fpga_serial import FPGASerial
-from utils.opencv.window import OpenCVWindow
+from utils.opencv.webcam_window import WebcamWindow
+from utils.opencv.skeleton_window import SkeletonWindow
 
 SCALE = 1000 # Milliseconds
 
@@ -25,8 +26,9 @@ def main():
         fpga.close()
         return
     
-    # Initialize OpenCV Window
-    window = OpenCVWindow("Webcam Hand Detection")
+    # Initialize Windows
+    window = WebcamWindow("Webcam Hand Detection")
+    visualizer_3d = SkeletonWindow("3D Hand Skeleton")
 
     print("--- Starting Webcam Hand Detection ---")
     print("Press 'Esc' or close the window to quit.")
@@ -38,9 +40,6 @@ def main():
     alpha = 0.1
 
     while cap.isOpened():
-        if window.should_close():
-            break
-
         current_time = time.perf_counter()
         raw_delta_ms = (current_time - last_time) * SCALE
         last_time = current_time
@@ -65,6 +64,7 @@ def main():
         # Detect landmarks in the frame
         result = landmarker.detect_for_video(mp_image, frame_timestamp_ms)
 
+        decoded = None
         if result.hand_landmarks:
             # Draw landmarks on the frame
             hand_landmarks.draw_landmarks(frame, result)
@@ -96,30 +96,25 @@ def main():
                     if fpga.is_connected() and feedback_packet[0] == 0xFE:
                          print(f"RX <- FPGA: {feedback_packet.hex().upper()}")
 
-                    # Show detection status and metrics on screen
-                    cv2.putText(frame, "Hand Detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        # Update 3D Visualization using DECODED packet data
+        skeleton_canvas = visualizer_3d.render_from_packet(decoded)
+        visualizer_3d.show(skeleton_canvas)
 
-                    # Line 1: Finger Flexions
-                    fingers_text = f"Fingers: T:{decoded['thumb']} I:{decoded['index']} M:{decoded['middle']} R:{decoded['ring']} P:{decoded['pinky']}"
-                    cv2.putText(frame, fingers_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-
-                    # Line 2: Specialized Metrics
-                    metrics_text = f"Metrics: Opp:{decoded['opposition']} Spr:{decoded['spread']} Wri:{decoded['wrist']}"
-                    cv2.putText(frame, metrics_text, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-
-                    cv2.putText(frame, f"AVG: {avg_ms:.1f}ms", (frame.shape[1] - 180, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-        else:
-            cv2.putText(frame, "No Hand Detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        # Show detection status and metrics on screen
+        window.draw_info(frame, decoded, avg_ms)
         
         # Display the frame
         window.show(frame)
+
+        if window.should_close() or visualizer_3d.should_close():
+            break
     
     # Cleanup
     fpga.close()
     landmarker.close()
     cap.release()
     window.close()
+    visualizer_3d.close()
 
 if __name__ == "__main__":
     main()
