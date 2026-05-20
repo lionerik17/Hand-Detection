@@ -17,8 +17,8 @@ def create_fpga_packet(world_landmarks):
     [0] Header (0xFF)
     [1-5] Finger Flexions (Thumb, Index, Middle, Ring, Pinky)
     [6] Thumb Opposition
-    [7] Finger Spread
-    [8] Wrist Flexion
+    [7] Wrist Pitch
+    [8] Wrist Yaw
     [9] Checksum (8-bit sum of bytes 1-8 mod 256)
 
     Args:
@@ -35,11 +35,10 @@ def create_fpga_packet(world_landmarks):
 
     # Calculate specialized metrics
     opposition = hand_physics.calculate_thumb_opposition(world_landmarks)
-    spread = hand_physics.calculate_finger_spread(world_landmarks)
-    wrist = hand_physics.calculate_wrist_flexion(world_landmarks)
+    wrist_pitch, wrist_yaw = hand_physics.calculate_wrist_angles(world_landmarks)
 
     # Assemble Payload (Bytes 1-8)
-    # Clamp to 255 to fit in a byte. 
+    # [1-5] Flexions, [6] Opposition, [7] Wrist Pitch, [8] Wrist Yaw
     payload = [
         max(0, min(255, flexions[0])), # Thumb
         max(0, min(255, flexions[1])), # Index
@@ -47,8 +46,8 @@ def create_fpga_packet(world_landmarks):
         max(0, min(255, flexions[3])), # Ring
         max(0, min(255, flexions[4])), # Pinky
         max(0, min(255, opposition)),
-        max(0, min(255, spread)),
-        max(0, min(255, wrist))
+        max(0, min(255, wrist_pitch)), # Wrist Pitch
+        max(0, min(255, wrist_yaw))   # Wrist Yaw
     ]
 
     # Calculate checksum (8-bit sum of payload)
@@ -88,12 +87,12 @@ def decode_fpga_packet(packet_bytes):
     
     # Return mapped dictionary
     return {
-        "thumb":      payload[0],
-        "index":      payload[1],
-        "middle":     payload[2],
-        "ring":       payload[3],
-        "pinky":      payload[4],
-        "opposition": payload[5],
-        "spread":     payload[6],
-        "wrist":      payload[7]
+        "thumb":       payload[0],
+        "index":       payload[1],
+        "middle":      payload[2],
+        "ring":        payload[3],
+        "pinky":       payload[4],
+        "opposition":  payload[5],
+        "wrist_pitch": payload[6],
+        "wrist_yaw":   payload[7]
     }

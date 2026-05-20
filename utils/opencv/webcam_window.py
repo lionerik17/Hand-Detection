@@ -16,7 +16,7 @@ class WebcamWindow(OpenCVWindow):
             fingers_text = f"Fingers: T:{decoded['thumb']} I:{decoded['index']} M:{decoded['middle']} R:{decoded['ring']} P:{decoded['pinky']}"
             cv2.putText(frame, fingers_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
             # Line 2: Specialized Metrics
-            metrics_text = f"Metrics: Opp:{decoded['opposition']} Spr:{decoded['spread']} Wri:{decoded['wrist']}"
+            metrics_text = f"Metrics: Opp:{decoded['opposition']} Pitch:{decoded['wrist_pitch']} Yaw:{decoded['wrist_yaw']}"
             cv2.putText(frame, metrics_text, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
             # Average time to compute landmarks and to create, send and receive packets
             cv2.putText(frame, f"AVG: {avg_ms:.1f}ms", (frame.shape[1] - 180, 30), 

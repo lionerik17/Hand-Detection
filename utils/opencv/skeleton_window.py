@@ -84,14 +84,16 @@ class SkeletonWindow(OpenCVWindow):
         # Flexion: 0 straight, high bent. Opposition: dist in mm.
         flexions = [decoded['thumb'], decoded['index'], decoded['middle'], decoded['ring'], decoded['pinky']]
         
-        # Normalize Spread (roughly 30-150 mm range to 0-1)
-        spread_val = np.clip((decoded['spread'] - 40) / 100.0, 0, 1)
+        # NOTE: Finger Spread byte is now repurposed for Wrist Pitch
+        spread_val = 0.5 # Neutral fixed spread
         
         # Normalize Opposition (distance decreases as thumb opposes)
         # Max dist ~120mm, Min dist ~20mm
         opp_factor = np.clip((120 - decoded['opposition']) / 100.0, 0, 1)
         
-        wrist_angle = decoded['wrist'] - 90
+        # Decoupled Wrist Angles (90 is neutral)
+        pitch_angle = decoded['wrist_pitch'] - 90
+        yaw_angle = decoded['wrist_yaw'] - 90
 
         # 3. Apply Kinematics
         
@@ -160,7 +162,8 @@ class SkeletonWindow(OpenCVWindow):
                 points[indices[3]] = self.rotate_around(points[indices[3]], mcp, bend_axis, f_rad * 1.0)
 
         # D. Wrist Rotation
-        Rw = self._get_rotation_matrix(wrist_angle, 0, 0)
+        # Separate rotations for Pitch (X) and Yaw (Y) to prevent coupled motion
+        Rw = self._get_rotation_matrix(-pitch_angle, -yaw_angle, 0)
         points = points @ Rw.T
 
         # 4. View Projection
