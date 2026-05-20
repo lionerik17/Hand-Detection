@@ -39,6 +39,10 @@ def main():
     avg_ms = 33.3
     alpha = 0.1
 
+    wrist_mode = fpga_packet.WRIST_MODE_PITCH
+    # Stateful wrist values to prevent flickering with multiplexing
+    wrist_state = {"pitch": 90, "yaw": 90}
+
     while cap.isOpened():
         current_time = time.perf_counter()
         raw_delta_ms = (current_time - last_time) * SCALE
@@ -73,7 +77,13 @@ def main():
             primary_hand_world = result.hand_world_landmarks[0]
             
             # 1. Create the FPGA packet (Header 0xFF)
-            packet = fpga_packet.create_fpga_packet(primary_hand_world)
+            packet = fpga_packet.create_fpga_packet(primary_hand_world, wrist_mode)
+            
+            # Toggle wrist mode for next frame (State Machine)
+            if wrist_mode == fpga_packet.WRIST_MODE_PITCH:
+                wrist_mode = fpga_packet.WRIST_MODE_YAW
+            else:
+                wrist_mode = fpga_packet.WRIST_MODE_PITCH
 
             if packet:
                 # 1. Visualize sent data in console
@@ -93,6 +103,16 @@ def main():
                 decoded = fpga_packet.decode_fpga_packet(feedback_packet)
                 
                 if decoded:
+                    # Update stateful wrist values
+                    if decoded["wrist_pitch"] is not None:
+                        wrist_state["pitch"] = decoded["wrist_pitch"]
+                    if decoded["wrist_yaw"] is not None:
+                        wrist_state["yaw"] = decoded["wrist_yaw"]
+                    
+                    # Inject full state back for UI
+                    decoded["wrist_pitch"] = wrist_state["pitch"]
+                    decoded["wrist_yaw"] = wrist_state["yaw"]
+
                     if fpga.is_connected() and feedback_packet[0] == 0xFE:
                          print(f"RX <- FPGA: {feedback_packet.hex().upper()}")
 

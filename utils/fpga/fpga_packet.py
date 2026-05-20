@@ -9,7 +9,11 @@ from ..hand import hand_physics
 HEADER_TX = 0xFF  # Header for packets sent TO FPGA
 HEADER_RX = 0xFE  # Header for packets received FROM FPGA
 
-def create_fpga_packet(world_landmarks):
+# Wrist Multiplexing Modes
+WRIST_MODE_PITCH = 0
+WRIST_MODE_YAW = 1
+
+def create_fpga_packet(world_landmarks, wrist_mode=WRIST_MODE_PITCH):
     """
     Constructs a 10-byte binary packet from hand world landmarks.
 
@@ -18,11 +22,12 @@ def create_fpga_packet(world_landmarks):
     [1-5] Finger Flexions (Thumb, Index, Middle, Ring, Pinky)
     [6] Thumb Opposition
     [7] Finger Spread
-    [8] Wrist Flexion
+    [8] Wrist (Multiplexed: 0-127 Pitch, 128-255 Yaw)
     [9] Checksum (8-bit sum of bytes 1-8 mod 256)
 
     Args:
         world_landmarks (list): MediaPipe hand world landmarks.
+        wrist_mode (int): WRIST_MODE_PITCH or WRIST_MODE_YAW.
 
     Returns:
         bytes or None: 10-byte binary packet ready for serial transmission.
@@ -36,10 +41,16 @@ def create_fpga_packet(world_landmarks):
     # Calculate specialized metrics
     opposition = hand_physics.calculate_thumb_opposition(world_landmarks)
     spread = hand_physics.calculate_finger_spread(world_landmarks)
-    wrist = hand_physics.calculate_wrist_flexion(world_landmarks)
+    pitch, yaw = hand_physics.calculate_wrist_angles(world_landmarks)
+
+    # Multiplex Wrist: Pitch or Yaw based on mode
+    # Clamp both to 0-127 range before applying offset
+    if wrist_mode == WRIST_MODE_PITCH:
+        wrist_byte = max(0, min(127, pitch))
+    else:
+        wrist_byte = 128 + max(0, min(127, yaw))
 
     # Assemble Payload (Bytes 1-8)
-    # Clamp to 255 to fit in a byte. 
     payload = [
         max(0, min(255, flexions[0])), # Thumb
         max(0, min(255, flexions[1])), # Index
@@ -48,7 +59,7 @@ def create_fpga_packet(world_landmarks):
         max(0, min(255, flexions[4])), # Pinky
         max(0, min(255, opposition)),
         max(0, min(255, spread)),
-        max(0, min(255, wrist))
+        wrist_byte
     ]
 
     # Calculate checksum (8-bit sum of payload)
@@ -87,7 +98,9 @@ def decode_fpga_packet(packet_bytes):
         return None
     
     # Return mapped dictionary
-    return {
+    # Wrist is multiplexed: we return both keys but only one is 'new'
+    wrist_val = payload[7]
+    res = {
         "thumb":      payload[0],
         "index":      payload[1],
         "middle":     payload[2],
@@ -95,5 +108,13 @@ def decode_fpga_packet(packet_bytes):
         "pinky":      payload[4],
         "opposition": payload[5],
         "spread":     payload[6],
-        "wrist":      payload[7]
     }
+
+    if wrist_val < 128:
+        res["wrist_pitch"] = wrist_val
+        res["wrist_yaw"] = None # Signal that this frame didn't update yaw
+    else:
+        res["wrist_pitch"] = None # Signal that this frame didn't update pitch
+        res["wrist_yaw"] = wrist_val - 128
+    
+    return res

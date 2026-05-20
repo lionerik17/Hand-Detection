@@ -6,7 +6,7 @@ SCALE = 1000  # Conversion from meters to millimeters
 # Finger joint mapping for flexion calculation
 # Format: (Base Joint, Middle Joint/Vertex, Tip-ward Joint)
 FINGER_JOINT_MAP = {
-    0: (HandJoint.THUMB_MCP,  HandJoint.THUMB_IP,  HandJoint.THUMB_TIP),
+    0: (HandJoint.THUMB_CMC,  HandJoint.THUMB_IP, HandJoint.THUMB_TIP),
     1: (HandJoint.INDEX_MCP,  HandJoint.INDEX_PIP,  HandJoint.INDEX_TIP),
     2: (HandJoint.MIDDLE_MCP, HandJoint.MIDDLE_PIP, HandJoint.MIDDLE_TIP),
     3: (HandJoint.RING_MCP,   HandJoint.RING_PIP,   HandJoint.RING_TIP),
@@ -111,18 +111,18 @@ def calculate_thumb_opposition(world_landmarks):
 
     return int(dist_m * SCALE)
 
-def calculate_wrist_flexion(world_landmarks):
+def calculate_wrist_angles(world_landmarks):
     """
-    Approximates wrist flexion using the angle between the vertical and palm vector.
+    Calculates separate wrist pitch (up-down) and yaw (left-right) angles.
 
     Args:
         world_landmarks (list): List of world landmarks.
 
     Returns:
-        int: Angle representing wrist flexion/extension (approx. 90 is neutral).
+        tuple: (pitch, yaw) in degrees, where 90 is neutral.
     """
     if not world_landmarks:
-        return 0
+        return 90, 90
 
     wrist = world_landmarks[HandJoint.WRIST]
     mcp = world_landmarks[HandJoint.MIDDLE_MCP]
@@ -130,7 +130,10 @@ def calculate_wrist_flexion(world_landmarks):
     # Vector from Wrist to Middle Finger Base
     v = np.array([mcp.x - wrist.x, mcp.y - wrist.y, mcp.z - wrist.z])
     
-    # Calculate angle in Y-Z plane (nodding motion)
-    # MediaPipe Y increases downwards, so we negate it for standard verticality
-    angle_rad = np.arctan2(v[2], -v[1])
-    return int(90 + np.degrees(angle_rad))
+    # Calculate angle in Y-Z plane (up-down/pitch)
+    pitch_rad = np.arctan2(v[2], -v[1])
+    
+    # Calculate angle in Y-X plane (left-right/yaw)
+    yaw_rad = np.arctan2(v[0], -v[1])
+
+    return int(90 + np.degrees(pitch_rad)), int(90 + np.degrees(yaw_rad))
