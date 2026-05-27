@@ -103,7 +103,7 @@ def main():
 
                 # If no real serial or no response, fall back to simulation for UI visualization
                 if not feedback_packet:
-                    sim_payload = packet[1:9]
+                    sim_payload = packet[1:10]
                     sim_checksum = 0xFE
                     for b in sim_payload:
                         sim_checksum ^= b

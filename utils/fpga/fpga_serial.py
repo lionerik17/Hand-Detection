@@ -42,12 +42,12 @@ class FPGASerial:
 
     def receive_packet(self):
         """
-        Reads a 10-byte response from the device if enough data is available in the buffer.
+        Reads an 11-byte response from the device if enough data is available in the buffer.
         Returns:
-            bytes or None: The 10-byte packet if received, None otherwise.
+            bytes or None: The 11-byte packet if received, None otherwise.
         """
-        if self.is_connected() and self.ser.in_waiting >= 10:
-            return self.ser.read(10)
+        if self.is_connected() and self.ser.in_waiting >= 11:
+            return self.ser.read(11)
         return None
 
     def is_connected(self):
