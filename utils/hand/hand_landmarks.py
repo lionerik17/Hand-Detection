@@ -9,7 +9,7 @@ HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
 MODEL_PATH = "models/hand_landmarker.task"
 
-def create_hand_landmarker(model_path: str = MODEL_PATH, num_hands: int = 1, running_mode=VisionRunningMode.IMAGE):
+def create_hand_landmarker(model_path: str = MODEL_PATH, num_hands: int = 1, running_mode=VisionRunningMode.VIDEO):
     """
     Initializes and returns a MediaPipe Hand Landmarker object.
 

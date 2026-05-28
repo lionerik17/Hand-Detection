@@ -1,80 +1,97 @@
-"""
-Module for constructing and decoding binary packets for FPGA communication.
-10-byte UART frames: direction byte + 8 servo angles + XOR checksum.
-Must match frame_rx.vhd / frame_tx.vhd protocol on the Basys3.
-"""
-
 import struct
-from ..hand import hand_physics
+from utils.hand import hand_physics
 
-HEADER_TX = 0xFF  # Write servo angles
-HEADER_RX = 0xFE  # Read-back from FPGA
-
-def _clamp_angle(value):
-    return max(0, min(180, int(value)))
-
-def create_fpga_packet(world_landmarks, elbow_angle=0):
+class FPGAPacket:
     """
-    Constructs a 10-byte packet matching the VHDL frame_rx protocol.
-
-    Servo mapping (from DESIGN_NOTES):
-      [1] Pinky, [2] Ring, [3] Middle, [4] Index,
-      [5] Thumb palm, [6] Thumb finger, [7] Wrist, [8] Elbow
-
-    Checksum: XOR of bytes 0-8 (receiver XORs all 10 bytes, expects 0x00).
+    A class to handle the construction and decoding of binary data packets 
+    for communication with an FPGA device over UART.
+    Uses the struct module for robust binary framing.
     """
-    if not world_landmarks:
-        return None
 
-    flexions = [int(hand_physics.get_finger_flexion(world_landmarks, i)) for i in range(5)]
-    pitch, yaw = hand_physics.calculate_wrist_angles(world_landmarks)
-    opposition = hand_physics.calculate_thumb_opposition(world_landmarks)
+    HEADER_TX = 0xFF  # Write servo angles
+    HEADER_RX = 0xFE  # Read-back from FPGA
 
-    payload = [
-        _clamp_angle(flexions[4]),     # Servo 0: Pinky
-        _clamp_angle(flexions[3]),     # Servo 1: Ring
-        _clamp_angle(flexions[2]),     # Servo 2: Middle
-        _clamp_angle(flexions[1]),     # Servo 3: Index
-        _clamp_angle(opposition),      # Servo 4: Thumb palm movement
-        _clamp_angle(flexions[0]),     # Servo 5: Thumb finger tension
-        _clamp_angle(pitch),           # Servo 6: Wrist rotation (pitch)
-        _clamp_angle(elbow_angle),     # Servo 7: Elbow
-    ]
+    def __init__(self):
+        # Format: 1 byte header, 8 bytes payload (servos), 1 byte checksum
+        self.packet_format = ">B8BB"
 
-    checksum = HEADER_TX
-    for b in payload:
-        checksum ^= b
+    def calculate_checksum(self, payload):
+        """Calculates XOR checksum of a list of bytes."""
+        checksum = 0
+        for val in payload:
+            checksum ^= val
+        return checksum
 
-    packet_data = [HEADER_TX] + payload + [checksum]
-    return struct.pack('!BBBBBBBBBB', *packet_data)
+    def create_fpga_packet(self, hand_world_landmarks, elbow_angle: int) -> bytes:
+        """
+        Constructs a 10-byte packet for the FPGA.
+        Format: [0xFF, Pinky, Ring, Middle, Index, ThumbPalm, Thumb, Wrist, Elbow, Checksum]
+        """
+        if not hand_world_landmarks:
+            return None
 
-def decode_fpga_packet(packet_bytes):
-    """
-    Decodes a 10-byte response from the FPGA (header 0xFE).
-    Validates XOR checksum: XOR of all 10 bytes must equal 0x00.
-    """
-    if not packet_bytes or len(packet_bytes) != 10:
-        return None
+        # Calculate flexion for all 5 fingers
+        pinky_flex  = int(hand_physics.get_finger_flexion(hand_world_landmarks, 4))
+        ring_flex   = int(hand_physics.get_finger_flexion(hand_world_landmarks, 3))
+        middle_flex = int(hand_physics.get_finger_flexion(hand_world_landmarks, 2))
+        index_flex  = int(hand_physics.get_finger_flexion(hand_world_landmarks, 1))
+        thumb_flex  = int(hand_physics.get_finger_flexion(hand_world_landmarks, 0))
 
-    values = struct.unpack('!BBBBBBBBBB', packet_bytes)
+        # Additional metrics
+        thumb_palm = int(hand_physics.calculate_thumb_opposition(hand_world_landmarks))
+        _, wrist_yaw = hand_physics.calculate_wrist_angles(hand_world_landmarks)
 
-    if values[0] != HEADER_RX:
-        return None
+        # Map to 0-180 payload
+        payload = [
+            max(0, min(180, pinky_flex)),
+            max(0, min(180, ring_flex)),
+            max(0, min(180, middle_flex)),
+            max(0, min(180, index_flex)),
+            max(0, min(180, thumb_palm)),
+            max(0, min(180, thumb_flex)),
+            max(0, min(180, int(wrist_yaw))),
+            max(0, min(180, int(elbow_angle)))
+        ]
 
-    xor_check = 0
-    for b in values:
-        xor_check ^= b
-    if xor_check != 0x00:
-        print(f"Error: XOR checksum failed (got 0x{xor_check:02X}, expected 0x00)")
-        return None
+        checksum = self.calculate_checksum(payload)
+        
+        # Pack into 10 bytes: Header + 8 payload bytes + Checksum
+        try:
+            return struct.pack(self.packet_format, self.HEADER_TX, *payload, checksum)
+        except Exception as e:
+            print(f"Packet packing error: {e}")
+            return None
 
-    return {
-        "pinky":      values[1],
-        "ring":       values[2],
-        "middle":     values[3],
-        "index":      values[4],
-        "thumb_palm": values[5],
-        "thumb":      values[6],
-        "wrist":      values[7],
-        "elbow":      values[8]
-    }
+    def decode_fpga_packet(self, packet: bytes) -> dict:
+        """
+        Decodes a 10-byte packet received from the FPGA.
+        Returns a dictionary of servo angles if the checksum is valid.
+        """
+        if not packet or len(packet) != 10:
+            return None
+
+        try:
+            unpacked = struct.unpack(self.packet_format, packet)
+            header = unpacked[0]
+            payload = unpacked[1:9]
+            checksum = unpacked[9]
+
+            if header != self.HEADER_RX:
+                return None
+
+            # Verify checksum
+            if self.calculate_checksum(payload) != checksum:
+                return None
+
+            return {
+                "pinky":      payload[0],
+                "ring":       payload[1],
+                "middle":     payload[2],
+                "index":      payload[3],
+                "thumb_palm": payload[4],
+                "thumb":      payload[5],
+                "wrist":      payload[6],
+                "elbow":      payload[7]
+            }
+        except Exception:
+            return None

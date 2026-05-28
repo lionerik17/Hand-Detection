@@ -1,11 +1,12 @@
 import cv2
 import mediapipe as mp
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from utils.hand import hand_landmarks
 from utils.pose import pose_landmarks
-from utils.fpga import fpga_packet
 from utils.fpga.fpga_serial import FPGASerial
+from utils.fpga.fpga_packet import FPGAPacket
 from utils.opencv.webcam_window import WebcamWindow
 from utils.opencv.skeleton_window import SkeletonWindow
 
@@ -14,6 +15,8 @@ SCALE = 1000 # Milliseconds
 def main():
     # Initialize Serial Port (COM3)
     fpga = FPGASerial(port='COM3', baudrate=115200)
+    # Initialize Packet Handler
+    fpga_pkt = FPGAPacket()
 
     # Initialize landmarkers in VIDEO mode
     landmarker = hand_landmarks.create_hand_landmarker(
@@ -27,6 +30,10 @@ def main():
         print("Error: Could not open webcam.")
         fpga.close()
         return
+
+    # Set resolution for performance
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     # Initialize Windows
     window = WebcamWindow("Webcam Hand Detection")
@@ -42,6 +49,9 @@ def main():
     avg_ms = 33.3
     alpha = 0.1
 
+    # Use ThreadPoolExecutor for parallel inference
+    executor = ThreadPoolExecutor(max_workers=2)
+
     while cap.isOpened():
         current_time = time.perf_counter()
         raw_delta_ms = (current_time - last_time) * SCALE
@@ -52,32 +62,31 @@ def main():
 
         success, frame = cap.read()
         if not success:
-            print("Ignoring empty camera frame.")
             continue
 
-        # Flip the frame horizontally for a more natural selfie-view display
+        # Optimize preprocessing: flip and convert in one go
         frame = cv2.flip(frame, 1)
-        # Convert the frame to RGB (MediaPipe requirement)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
         # Get the current timestamp
         frame_timestamp_ms = int(time.time() * SCALE)
 
-        # Detect landmarks in the frame
-        result = landmarker.detect_for_video(mp_image, frame_timestamp_ms)
-        pose_result = pose.detect_for_video(mp_image, frame_timestamp_ms)
+        # Parallel inference: Hand and Pose detection
+        future_hand = executor.submit(landmarker.detect_for_video, mp_image, frame_timestamp_ms)
+        future_pose = executor.submit(pose.detect_for_video, mp_image, frame_timestamp_ms)
+
+        result = future_hand.result()
+        pose_result = future_pose.result()
 
         decoded = None
         if result.hand_landmarks:
-            # Draw landmarks on the frame
+            # Draw hand landmarks
             hand_landmarks.draw_landmarks(frame, result)
-
-            # Extract world landmarks for the detected hand
             primary_hand_world = result.hand_world_landmarks[0]
 
-            # Get elbow angle from pose, matching the detected hand's side
-            elbow_angle = 0
+            # Get elbow angle from pose
+            elbow_angle = 0 # Default straight
             if pose_result.pose_landmarks:
                 handedness = result.handedness[0][0].category_name
                 elbow_angle = pose_landmarks.get_elbow_angle(
@@ -87,46 +96,35 @@ def main():
                     frame, pose_result.pose_landmarks[0], handedness
                 )
 
-            # 1. Create the FPGA packet (Header 0xFF)
-            packet = fpga_packet.create_fpga_packet(primary_hand_world, elbow_angle)
+            # Create and send FPGA packet
+            packet = fpga_pkt.create_fpga_packet(primary_hand_world, elbow_angle)
 
             if packet:
-                # 1. Visualize sent data in console
-                status_prefix = "TX -> FPGA" if fpga.is_connected() else "[SIM] TX -> FPGA"
-                print(f"{status_prefix}: {packet.hex().upper()}")
-
-                # 2. Send to Serial Port
                 fpga.send_packet(packet)
-
-                # 3. Receive Feedback (Real or Simulated)
+                # Receive Feedback
                 feedback_packet = fpga.receive_packet()
 
-                # If no real serial or no response, fall back to simulation for UI visualization
+                # If no real serial or no response, fall back to simulation for UI
                 if not feedback_packet:
                     sim_payload = packet[1:9]
-                    sim_checksum = 0xFE
+                    # Decoder expects XOR checksum of payload bytes
+                    sim_checksum = 0
                     for b in sim_payload:
                         sim_checksum ^= b
-                    feedback_packet = bytes([0xFE]) + sim_payload + bytes([sim_checksum])
+                    feedback_packet = bytes([FPGAPacket.HEADER_RX]) + sim_payload + bytes([sim_checksum])
 
-                decoded = fpga_packet.decode_fpga_packet(feedback_packet)
+                decoded = fpga_pkt.decode_fpga_packet(feedback_packet)
 
-                if decoded:
-                    if fpga.is_connected() and feedback_packet[0] == 0xFE:
-                         print(f"RX <- FPGA: {feedback_packet.hex().upper()}")
 
-        # Update 3D Visualization using DECODED packet data
+        # Update UI
         skeleton_canvas = visualizer_3d.render_from_packet(decoded)
         visualizer_3d.show(skeleton_canvas)
-
-        # Show detection status and metrics on screen
         window.draw_info(frame, decoded, avg_ms)
-
-        # Display the frame
         window.show(frame)
 
+        # Poll keys
         key = window.poll_key()
-        if key in (27, ord('q')) or visualizer_3d.should_close():
+        if key in (27, ord('q')):
             break
         elif key == ord('a'):
             visualizer_3d.angle_y -= 10
@@ -136,8 +134,13 @@ def main():
             visualizer_3d.angle_x -= 10
         elif key == ord('s'):
             visualizer_3d.angle_x += 10
+        elif key == ord('z'):
+            visualizer_3d.angle_z -= 10
+        elif key == ord('x'):
+            visualizer_3d.angle_z += 10
 
     # Cleanup
+    executor.shutdown()
     fpga.close()
     landmarker.close()
     pose.close()
