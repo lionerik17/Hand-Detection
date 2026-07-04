@@ -5,3 +5,8 @@ venv
 env
 
 __pycache__
+
+testing-validation/images
+testing-validation/*.png
+testing-validation/*.txt
+testing-validation/*.zip
