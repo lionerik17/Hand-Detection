@@ -14,7 +14,7 @@ SCALE = 1000 # Milliseconds
 
 def main():
     # Initialize Serial Port (COM3)
-    fpga = FPGASerial(port='COM3', baudrate=115200)
+    fpga = FPGASerial(port='COM16', baudrate=115200)
     # Initialize Packet Handler
     fpga_pkt = FPGAPacket()
 
@@ -101,19 +101,13 @@ def main():
 
             if packet:
                 fpga.send_packet(packet)
-                # Receive Feedback
+                # Ask the FPGA for feedback: it only replies to a 0xFE frame.
+                # Echo the same payload so it can't zero the servo command.
+                fpga.send_packet(fpga_pkt.create_read_request(packet))
+                # Read the real AD7124 measurements it sends back.
                 feedback_packet = fpga.receive_packet()
 
-                # If no real serial or no response, fall back to simulation for UI
-                if not feedback_packet:
-                    sim_payload = packet[1:9]
-                    # Decoder expects XOR checksum of payload bytes
-                    sim_checksum = 0
-                    for b in sim_payload:
-                        sim_checksum ^= b
-                    feedback_packet = bytes([FPGAPacket.HEADER_RX]) + sim_payload + bytes([sim_checksum])
-
-                decoded = fpga_pkt.decode_fpga_packet(feedback_packet)
+                decoded = fpga_pkt.decode_fpga_packet(feedback_packet) if feedback_packet else None
 
 
         # Update UI

@@ -46,18 +46,25 @@ def plot_thread_fn(stop_event, data_lock, frame_numbers, sent_history, recv_hist
     global current_byte_index
     
     plt.ion()
-    fig, ax = plt.subplots(figsize=(8, 5))
+    # Two separate stacked plots sharing the x-axis: sent on top, received below.
+    fig, (ax_sent, ax_recv) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
     fig.canvas.manager.set_window_title("Cadre trimise vs Cadre recepționate")
-    
-    # Initialize sent and received lines (thick received line, thin sent line)
-    # Using a neutral dark slate color for Sent to contrast beautifully with active gradient colors for Received
-    line_sent, = ax.plot([], [], label="Trimis", color="#2c3e50", linewidth=2.0, linestyle="--", marker="o", markersize=4.5, alpha=0.7)
-    line_recv, = ax.plot([], [], label="Recepționat", color=GRADIENT_COLORS[0], linewidth=3.0, marker="o", markersize=4.5)
-    
-    ax.set_ylim(-10, 190)
-    ax.grid(True, linestyle=":", alpha=0.6)
-    ax.legend(loc="upper right")
-    
+
+    # Sent (Trimis) on its own axes
+    line_sent, = ax_sent.plot([], [], label="Trimis", color="#2c3e50", linewidth=2.0, linestyle="--", marker="o", markersize=4.5)
+    ax_sent.set_ylim(-10, 190)
+    ax_sent.grid(True, linestyle=":", alpha=0.6)
+    ax_sent.set_ylabel("Trimis")
+    ax_sent.legend(loc="upper right")
+
+    # Received (Recepționat) on its own axes
+    line_recv, = ax_recv.plot([], [], label="Recepționat", color=GRADIENT_COLORS[0], linewidth=3.0, marker="o", markersize=4.5)
+    ax_recv.set_ylim(-10, 190)
+    ax_recv.grid(True, linestyle=":", alpha=0.6)
+    ax_recv.set_ylabel("Recepționat")
+    ax_recv.set_xlabel("Număr cadru")
+    ax_recv.legend(loc="upper right")
+
     # Keypress callback for Matplotlib window
     def on_key(event):
         global current_byte_index
@@ -65,52 +72,49 @@ def plot_thread_fn(stop_event, data_lock, frame_numbers, sent_history, recv_hist
             with data_lock:
                 current_byte_index = int(event.key) - 1
             print(f"[Plot Window] Switched view to: {BYTE_NAMES[current_byte_index]} (Byte {current_byte_index + 1})")
-            
+
     fig.canvas.mpl_connect('key_press_event', on_key)
-    
+
     while not stop_event.is_set():
         with data_lock:
             if not frame_numbers:
                 time.sleep(0.05)
                 continue
-            
+
             # Copy last 100 frames to keep plot clean and fast
             x = list(frame_numbers[-100:])
             y_sent = list(sent_history[current_byte_index][-100:])
             y_recv = list(recv_history[current_byte_index][-100:])
             curr_byte = current_byte_index
-            
-        ax.set_title(f"Byte curent: {BYTE_NAMES[curr_byte]} (Byte {curr_byte+1})\nApăsați tastele 1-8 pentru a schimba byte-ul", fontsize=12, fontweight='bold')
-        ax.set_xlabel("Număr cadru")
-        ax.set_ylabel("Valoare decodificată din cadru")
-        
+
+        fig.suptitle(f"Byte curent: {BYTE_NAMES[curr_byte]} (Byte {curr_byte+1})  —  Apăsați tastele 1-8 pentru a schimba byte-ul", fontsize=12, fontweight='bold')
+
         # Update lines data
         line_sent.set_data(x, y_sent)
         line_recv.set_data(x, y_recv)
-        
-        # Update colors based on the current byte gradient
-        line_color = GRADIENT_COLORS[curr_byte]
-        line_recv.set_color(line_color)
-        
-        # Adjust x-axis dynamically
-        ax.set_xlim(x[0], x[-1] + 1)
-        
+
+        # Update received color based on the current byte gradient
+        line_recv.set_color(GRADIENT_COLORS[curr_byte])
+
+        # Adjust shared x-axis dynamically
+        ax_recv.set_xlim(x[0], x[-1] + 1)
+
         try:
             fig.canvas.draw()
             fig.canvas.flush_events()
         except Exception:
             # Handle if the window is closed manually
             break
-            
+
         time.sleep(0.03)  # Loop at roughly 30 FPS
-        
+
     plt.close(fig)
 
 def main():
     global current_byte_index
 
-    # Initialize Serial Port (COM3)
-    fpga = FPGASerial(port='COM3', baudrate=115200)
+    # Initialize Serial Port (COM16 = FTDI FPGA board)
+    fpga = FPGASerial(port='COM16', baudrate=115200)
     # Initialize Packet Handler
     fpga_pkt = FPGAPacket()
 
@@ -225,26 +229,14 @@ def main():
                     curr_sent = list(packet[1:9])
 
                     fpga.send_packet(packet)
-                    # Receive Feedback
+                    # Ask the FPGA for feedback: it only replies to a 0xFE frame.
+                    # Echo the same payload so it can't zero the servo command.
+                    fpga.send_packet(fpga_pkt.create_read_request(packet))
+                    # Read the real AD7124 measurements it sends back. No sim
+                    # fallback: if nothing arrives, the received plot stays flat.
                     feedback_packet = fpga.receive_packet()
 
-                    # If no real serial or no response, fall back to simulation for UI
-                    if not feedback_packet:
-                        sim_payload = packet[1:9]
-                        # Introduce a small fluctuation to simulated received values only if not connected to COM3
-                        if not fpga.is_connected():
-                            sim_payload = bytearray(sim_payload)
-                            for i in range(len(sim_payload)):
-                                fluctuation = random.randint(-5, 5)
-                                sim_payload[i] = max(0, min(180, sim_payload[i] + fluctuation))
-                            sim_payload = bytes(sim_payload)
-                        # Decoder expects XOR checksum of payload bytes
-                        sim_checksum = 0
-                        for b in sim_payload:
-                            sim_checksum ^= b
-                        feedback_packet = bytes([FPGAPacket.HEADER_RX]) + sim_payload + bytes([sim_checksum])
-
-                    decoded = fpga_pkt.decode_fpga_packet(feedback_packet)
+                    decoded = fpga_pkt.decode_fpga_packet(feedback_packet) if feedback_packet else None
                     if decoded:
                         # Update local state of data received
                         curr_recv = [

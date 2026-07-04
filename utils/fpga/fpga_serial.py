@@ -40,14 +40,33 @@ class FPGASerial:
             return True
         return False
 
-    def receive_packet(self):
+    def receive_packet(self, header=0xFE, length=10):
         """
-        Reads a 10-byte response from the device if enough data is available in the buffer.
+        Reads one framed response from the device, synchronising on the header.
+
+        Unlike a bare read(10), this scans for the direction byte (0xFE) and
+        then reads the remaining bytes, so it stays aligned even if the serial
+        buffer starts mid-frame. Bounded by the port timeout, so it will not
+        block forever when the FPGA sends nothing.
+
         Returns:
-            bytes or None: The 10-byte packet if received, None otherwise.
+            bytes or None: The `length`-byte packet starting at `header`, or None.
         """
-        if self.is_connected() and self.ser.in_waiting >= 10:
-            return self.ser.read(10)
+        if not self.is_connected():
+            return None
+
+        # Find the header byte (read one byte at a time, limited by timeout).
+        # Give up after scanning a couple of frame-lengths worth of bytes so a
+        # silent FPGA doesn't stall the capture loop.
+        for _ in range(length * 3):
+            b = self.ser.read(1)
+            if not b:            # timeout: nothing arriving
+                return None
+            if b[0] == header:
+                rest = self.ser.read(length - 1)
+                if len(rest) == length - 1:
+                    return bytes([header]) + rest
+                return None
         return None
 
     def is_connected(self):
