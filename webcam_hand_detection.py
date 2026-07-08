@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import time
+import struct
 from concurrent.futures import ThreadPoolExecutor
 
 from utils.hand import hand_landmarks
@@ -107,8 +108,10 @@ def main():
                 # Read the real AD7124 measurements it sends back.
                 feedback_packet = fpga.receive_packet()
 
-                decoded = fpga_pkt.decode_fpga_packet(feedback_packet) if feedback_packet else None
-
+                if feedback_packet:
+                    decoded = fpga_pkt.decode_fpga_packet(feedback_packet)
+                else:
+                    decoded = fpga_pkt.decode_fpga_packet_simulation(packet)
 
         # Update UI
         skeleton_canvas = visualizer_3d.render_from_packet(decoded)

@@ -159,3 +159,30 @@ class FPGAPacket:
             }
         except Exception:
             return None
+        
+    def decode_fpga_packet_simulation(self, packet: bytes) -> dict:
+        """
+        Decodes a 10-byte packet in simulation mode.
+        Returns a dictionary of servo angles if the checksum is valid.
+        """
+        if not packet or len(packet) != 10:
+            return None
+
+        try:
+            unpacked = struct.unpack(self.packet_format, packet)
+            _header = unpacked[0]
+            payload = unpacked[1:9]
+            _checksum = unpacked[9]
+
+            return {
+                "pinky":      payload[0],
+                "ring":       payload[1],
+                "middle":     payload[2],
+                "index":      payload[3],
+                "thumb_palm": payload[4],
+                "thumb":      payload[5],
+                "wrist":      payload[6],
+                "elbow":      payload[7]
+            }
+        except Exception:
+            return None

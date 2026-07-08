@@ -93,7 +93,7 @@ class SkeletonWindow(OpenCVWindow):
         # 3. Apply Kinematics
 
         # A. Wrist Rotation (Rotate Hand joints)
-        Rw = self._get_rotation_matrix(wrist_angle, 0, 0)
+        Rw = self._get_rotation_matrix(-wrist_angle, 0, 0)
         points[:21] = points[:21] @ Rw.T
 
         # B. Finger Spread
@@ -133,7 +133,7 @@ class SkeletonWindow(OpenCVWindow):
         # E. Arm Kinematics (Pivot Hand around Elbow)
         # The upper arm (Shoulder -> Elbow) stays fixed. 
         # We rotate all 21 hand points around the elbow.
-        flexion_rad = np.radians(180 - elbow_angle_deg)
+        flexion_rad = np.radians(elbow_angle_deg)
         for i in range(21):
             # We use -flexion_rad to ensure the hand bends toward the shoulder 
             # in the correct visual direction.

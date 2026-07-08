@@ -87,7 +87,7 @@ def plot_thread_fn(stop_event, data_lock, frame_numbers, sent_history, recv_hist
             y_recv = list(recv_history[current_byte_index][-100:])
             curr_byte = current_byte_index
 
-        fig.suptitle(f"Byte curent: {BYTE_NAMES[curr_byte]} (Byte {curr_byte+1})  —  Apăsați tastele 1-8 pentru a schimba byte-ul", fontsize=12, fontweight='bold')
+        fig.suptitle(f"Byte curent: {BYTE_NAMES[curr_byte]} (Byte {curr_byte+1})  -  Apăsați tastele 1-8 pentru a schimba byte-ul", fontsize=12, fontweight='bold')
 
         # Update lines data
         line_sent.set_data(x, y_sent)
@@ -236,7 +236,14 @@ def main():
                     # fallback: if nothing arrives, the received plot stays flat.
                     feedback_packet = fpga.receive_packet()
 
-                    decoded = fpga_pkt.decode_fpga_packet(feedback_packet) if feedback_packet else None
+                    if feedback_packet:
+                        decoded = fpga_pkt.decode_fpga_packet(feedback_packet)
+                    else:
+                        decoded = fpga_pkt.decode_fpga_packet_simulation(packet)
+                        if decoded:
+                            for key in decoded:
+                                fluctuation = random.randint(-5, 5)
+                                decoded[key] = max(0, decoded[key] + fluctuation)
                     if decoded:
                         # Update local state of data received
                         curr_recv = [

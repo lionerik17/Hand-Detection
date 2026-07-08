@@ -15,6 +15,7 @@ sys.path.append(project_root)
 from utils.hand import hand_landmarks
 from utils.pose import pose_landmarks
 from utils.hand import hand_physics
+from utils.fpga.fpga_packet import FPGAPacket
 
 def download_with_progress(url, filepath):
     """Downloads a file from a URL with a console progress bar."""
@@ -130,6 +131,7 @@ def main():
         running_mode=pose_landmarks.VisionRunningMode.IMAGE,
         model_path=pose_model_path
     )
+    fpga_pkt = FPGAPacket()
 
     # Dictionary to collect all biometric data points
     raw_data = {
@@ -196,13 +198,13 @@ def main():
                 raw_data["wrist"].append(wrist_yaw)
 
                 # Store mapped/clamped values (as sent in the FPGA packet)
-                mapped_data["pinky"].append(max(0, min(180, int(pinky_flex))))
-                mapped_data["ring"].append(max(0, min(180, int(ring_flex))))
-                mapped_data["middle"].append(max(0, min(180, int(middle_flex))))
-                mapped_data["index"].append(max(0, min(180, int(index_flex))))
-                mapped_data["thumb_palm"].append(max(0, min(180, int(thumb_palm))))
-                mapped_data["thumb"].append(max(0, min(180, int(thumb_flex))))
-                mapped_data["wrist"].append(max(0, min(180, int(wrist_yaw))))
+                mapped_data["pinky"].append(fpga_pkt._scale(pinky_flex, fpga_pkt.FLEX_MIN, fpga_pkt.FLEX_MAX))
+                mapped_data["ring"].append(fpga_pkt._scale(ring_flex, fpga_pkt.FLEX_MIN, fpga_pkt.FLEX_MAX))
+                mapped_data["middle"].append(fpga_pkt._scale(middle_flex, fpga_pkt.FLEX_MIN, fpga_pkt.FLEX_MAX))
+                mapped_data["index"].append(fpga_pkt._scale(index_flex, fpga_pkt.FLEX_MIN, fpga_pkt.FLEX_MAX))
+                mapped_data["thumb_palm"].append(fpga_pkt._scale(thumb_palm, fpga_pkt.OPP_MIN, fpga_pkt.OPP_MAX, invert=True))
+                mapped_data["thumb"].append(fpga_pkt._scale(thumb_flex, fpga_pkt.FLEX_MIN, fpga_pkt.FLEX_MAX))
+                mapped_data["wrist"].append(max(0, min(180, 180 - int(wrist_yaw))))
         else:
             print("  No hands detected.")
 
@@ -226,7 +228,7 @@ def main():
             elbow = pose_landmarks.get_elbow_angle(pose_result.pose_landmarks[0], "Right")
 
             raw_data["elbow"].append(elbow)
-            mapped_data["elbow"].append(max(0, min(180, int(elbow))))
+            mapped_data["elbow"].append(max(0, min(180, 180 - int(elbow))))
         else:
             print("  No body pose detected.")
 
